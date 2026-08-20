@@ -59,12 +59,6 @@ powershell -ExecutionPolicy Bypass -File ".\Desinstalar-CrearPDF.ps1"
 Elimina la entrada del menú contextual y los archivos instalados en
 `%LOCALAPPDATA%\CrearPDF`.
 
-## Personalizar el ícono
-
-Reemplaza `crear_pdf.ico` por tu propio ícono (formato `.ico`, ideal 256×256
-con fondo transparente) y vuelve a ejecutar el instalador. Se limpia
-automáticamente la caché de íconos de Windows para que el cambio se vea de
-inmediato.
 
 ## Solución de problemas
 
