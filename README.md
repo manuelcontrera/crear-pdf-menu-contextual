@@ -25,6 +25,21 @@ silencio; el resto se combina igual.
 
 No requiere permisos de administrador; se instala solo para el usuario actual.
 
+### Opción sencilla (recomendada para quien no usa la terminal)
+
+Haz **doble clic en `Instalar.bat`**. Se abre una ventana negra (la terminal)
+que hace todo el trabajo por ti: solo tienes que esperar a que termine y
+presionar una tecla al final para cerrarla.
+
+> Windows puede mostrar una advertencia tipo **"Windows protegió su PC"**
+> por tratarse de un script sin firma digital de un editor reconocido. Es
+> normal en scripts personales — haz clic en **"Más información"** →
+> **"Ejecutar de todas formas"**.
+
+Para desinstalar, doble clic en `Desinstalar.bat`.
+
+### Opción manual (PowerShell)
+
 ```powershell
 powershell -ExecutionPolicy Bypass -File ".\Instalar-CrearPDF.ps1"
 ```
@@ -51,6 +66,8 @@ Unblock-File .\Instalar-CrearPDF.ps1
 ```
 
 ## Desinstalación
+
+Doble clic en `Desinstalar.bat`, o manualmente:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File ".\Desinstalar-CrearPDF.ps1"
