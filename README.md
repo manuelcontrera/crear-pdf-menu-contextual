@@ -15,6 +15,19 @@ similar a las Acciones Rápidas de macOS.
 Los archivos de tipos no soportados dentro de una selección se omiten en
 silencio; el resto se combina igual.
 
+## Estructura del proyecto
+
+```
+Instalar.bat        <- doble clic para instalar
+Desinstalar.bat      <- doble clic para desinstalar
+README.md
+src/                 <- archivos internos, no hace falta tocarlos
+  Instalar-CrearPDF.ps1
+  Desinstalar-CrearPDF.ps1
+  crear_pdf.py
+  crear_pdf.ico
+```
+
 ## Requisitos
 
 - Windows 10/11
@@ -60,7 +73,7 @@ carpeta extraída en el Explorador de Archivos → **"Abrir en Terminal"**, y
 luego:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File ".\Instalar-CrearPDF.ps1"
+powershell -ExecutionPolicy Bypass -File ".\src\Instalar-CrearPDF.ps1"
 ```
 
 Si descargaste el proyecto como `.zip`, desbloquea los archivos antes (quedan
@@ -69,7 +82,7 @@ defecto; `Instalar.bat` ya hace esto automáticamente, pero al ejecutar el
 `.ps1` directo hay que hacerlo a mano):
 
 ```powershell
-Unblock-File .\Instalar-CrearPDF.ps1
+Get-ChildItem -Recurse | Unblock-File
 ```
 
 ## Desinstalación
@@ -77,7 +90,7 @@ Unblock-File .\Instalar-CrearPDF.ps1
 Doble clic en `Desinstalar.bat`, o manualmente:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File ".\Desinstalar-CrearPDF.ps1"
+powershell -ExecutionPolicy Bypass -File ".\src\Desinstalar-CrearPDF.ps1"
 ```
 
 Elimina la entrada del menú contextual y los archivos instalados en

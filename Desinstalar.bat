@@ -10,7 +10,7 @@ echo.
 
 powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-ChildItem -Path '%~dp0' -Recurse -File | Unblock-File" >nul 2>&1
 
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0Desinstalar-CrearPDF.ps1"
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0src\Desinstalar-CrearPDF.ps1"
 set EXITCODE=%ERRORLEVEL%
 
 echo.

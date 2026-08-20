@@ -14,7 +14,7 @@ echo.
 
 powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-ChildItem -Path '%~dp0' -Recurse -File | Unblock-File" >nul 2>&1
 
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0Instalar-CrearPDF.ps1"
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0src\Instalar-CrearPDF.ps1"
 set EXITCODE=%ERRORLEVEL%
 
 echo.
