@@ -23,29 +23,24 @@ silencio; el resto se combina igual.
 
 ## Instalación
 
-Haz clic derecho dentro de la carpeta extraída en Explorador de Archivos y selecciona "Abrir con la terminal".
 No requiere permisos de administrador; se instala solo para el usuario actual.
 
-### Opción sencilla (recomendada para quien no usa la terminal)
+### Doble clic (recomendado)
 
-Haz **doble clic en `Instalar.bat`**. Se abre una ventana negra (la terminal)
-que hace todo el trabajo por ti: solo tienes que esperar a que termine y
-presionar una tecla al final para cerrarla.
+1. Descarga este repositorio (botón **Code → Download ZIP**) y extrae la carpeta.
+2. Haz **doble clic en `Instalar.bat`**.
+
+Se abre una ventana de terminal que hace todo el trabajo automáticamente
+(instala Python si hace falta, sus dependencias, y registra el menú
+contextual). Solo tienes que esperar a que termine y presionar una tecla al
+final para cerrarla — no hace falta escribir ningún comando.
 
 > Windows puede mostrar una advertencia tipo **"Windows protegió su PC"**
 > por tratarse de un script sin firma digital de un editor reconocido. Es
 > normal en scripts personales — haz clic en **"Más información"** →
 > **"Ejecutar de todas formas"**.
 
-Para desinstalar, doble clic en `Desinstalar.bat`.
-
-### Opción manual (PowerShell)
-
-```powershell
-powershell -ExecutionPolicy Bypass -File ".\Instalar-CrearPDF.ps1"
-```
-
-El instalador:
+El instalador, por detrás:
 
 1. Busca Python en el equipo; si no lo encuentra, lo instala con `winget`.
 2. Instala las dependencias de Python necesarias (`img2pdf`, `pypdf`,
@@ -58,9 +53,20 @@ El instalador:
 > saltar directo ahí). Es una limitación del propio Windows 11, no de este
 > script.
 
-Si descargaste este proyecto como `.zip`, desbloquéalo antes de instalar
-(los archivos descargados de internet quedan marcados y PowerShell bloquea su
-ejecución por defecto):
+### Opción avanzada (PowerShell)
+
+Si prefieres ejecutarlo tú mismo desde la terminal: clic derecho dentro de la
+carpeta extraída en el Explorador de Archivos → **"Abrir en Terminal"**, y
+luego:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File ".\Instalar-CrearPDF.ps1"
+```
+
+Si descargaste el proyecto como `.zip`, desbloquea los archivos antes (quedan
+marcados como descargados de internet y PowerShell bloquea su ejecución por
+defecto; `Instalar.bat` ya hace esto automáticamente, pero al ejecutar el
+`.ps1` directo hay que hacerlo a mano):
 
 ```powershell
 Unblock-File .\Instalar-CrearPDF.ps1
@@ -76,7 +82,6 @@ powershell -ExecutionPolicy Bypass -File ".\Desinstalar-CrearPDF.ps1"
 
 Elimina la entrada del menú contextual y los archivos instalados en
 `%LOCALAPPDATA%\CrearPDF`.
-
 
 ## Solución de problemas
 
