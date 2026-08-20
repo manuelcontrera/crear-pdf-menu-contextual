@@ -23,6 +23,7 @@ silencio; el resto se combina igual.
 
 ## Instalación
 
+Haz clic derecho dentro de la carpeta extraída en Explorador de Archivos y selecciona "Abrir con la terminal".
 No requiere permisos de administrador; se instala solo para el usuario actual.
 
 ```powershell
