@@ -104,7 +104,13 @@ foreach ($pkg in $checkImports.Keys) {
 }
 
 # Registrar la entrada de menu contextual (solo para el usuario actual)
-$command = '"' + $pythonw + '" "' + $scriptDest + '" "%1"'
+# OJO: %1 NO se envuelve en comillas propias. Con MultiSelectModel=Document,
+# Windows sustituye %1 por una lista de rutas ya entrecomilladas (una por
+# archivo seleccionado); si lo envolvemos ademas con nuestras propias
+# comillas, el resultado queda mal formado (comillas duplicadas) y Windows
+# puede truncar o perder archivos de la seleccion al interpretar la linea de
+# comandos. Para una sola ruta, Windows ya la entrecomilla si tiene espacios.
+$command = '"' + $pythonw + '" "' + $scriptDest + '" %1'
 
 $regBase = "Registry::HKEY_CURRENT_USER\Software\Classes\*\shell\CrearPDF"
 New-Item -Path $regBase -Force | Out-Null

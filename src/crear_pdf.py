@@ -15,6 +15,7 @@ Los errores no se muestran en pantalla: quedan registrados en
 import hashlib
 import io
 import os
+import re
 import sys
 import textwrap
 import time
@@ -43,6 +44,16 @@ def log_error(msg):
             f.write(f"[{datetime.now()}] {msg}\n")
     except Exception:
         pass
+
+
+_NUM_RE = re.compile(r"(\d+)")
+
+
+def natural_sort_key(path):
+    """Ordena por nombre de archivo de forma 'natural': 1, 2, 3, 10 en vez de
+    1, 10, 2, 3 (que es como quedaria con un orden alfabetico estricto)."""
+    name = os.path.basename(path).lower()
+    return [int(tok) if tok.isdigit() else tok for tok in _NUM_RE.split(name)]
 
 
 def render_lines_to_pdf_bytes(lines):
@@ -103,17 +114,50 @@ def unique_path(path):
 
 
 BATCH_DIR = os.path.join(os.environ.get("TEMP", "."), "CrearPDF", "batches")
-BATCH_DEBOUNCE_SECONDS = 0.6
-BATCH_MAX_WAIT_SECONDS = 5.0
+# BATCH_MIN_WAIT_SECONDS: espera minima OBLIGATORIA antes de considerar
+# cerrar el lote, sin importar si todavia no ha llegado ningun rezagado. Es
+# necesaria porque, con cachés de disco frias, varios procesos de Python
+# lanzados casi a la vez pueden tardar mas de un segundo en terminar sus
+# imports antes de alcanzar a anotarse en la lista compartida; sin este piso,
+# el lider podria ver "silencio" desde el primer instante (porque nadie mas
+# se ha anotado *todavia*) y cerrar el lote de forma prematura, perdiendo
+# archivos.
+# BATCH_DEBOUNCE_SECONDS: tiempo de silencio (sin cambios) requerido, una vez
+# superado el piso anterior, para dar por terminada la seleccion.
+# BATCH_MAX_WAIT_SECONDS: tope absoluto de espera por si algo se traba.
+BATCH_MIN_WAIT_SECONDS = 4.0
+BATCH_DEBOUNCE_SECONDS = 1.5
+BATCH_MAX_WAIT_SECONDS = 25.0
+BATCH_APPEND_RETRY_SECONDS = 5.0
+
+
+def _append_with_retry(path, line, retry_seconds=BATCH_APPEND_RETRY_SECONDS):
+    deadline = time.time() + retry_seconds
+    while True:
+        try:
+            with open(path, "a", encoding="utf-8") as f:
+                f.write(line + "\n")
+            return
+        except OSError:
+            if time.time() >= deadline:
+                raise
+            time.sleep(0.1)
 
 
 def collect_batch(argv_files):
-    """Windows Explorer a veces invoca el comando una vez por cada archivo
-    seleccionado en lugar de una sola vez con todos (segun version/config).
-    Aqui agrupamos esas invocaciones casi-simultaneas (misma carpeta, a
-    milisegundos de diferencia) en un unico lote. Solo el primer proceso
-    en tomar el "lock" (el lider) hace la fusion; el resto solo deja su
-    archivo anotado y termina.
+    """Windows Explorer (y varios exploradores de terceros) a veces invocan
+    el comando una vez por cada archivo seleccionado en lugar de una sola vez
+    con todos. Aqui agrupamos esas invocaciones casi-simultaneas (misma
+    carpeta, a milisegundos/segundos de diferencia) en un unico lote.
+
+    Solo el primer proceso en tomar el "lock" (el lider) hace la fusion; el
+    resto solo deja su archivo anotado en la lista compartida y termina.
+
+    Para evitar perder archivos por una condicion de carrera entre "el lider
+    deja de esperar y lee la lista" y "un rezagado todavia esta anotandose",
+    el cierre del lote es atomico: se renombra el archivo de pendientes antes
+    de leerlo, asi cualquier invocacion que llegue despues simplemente
+    empieza un lote nuevo en vez de corromper el que ya se esta procesando.
     """
     if len(argv_files) != 1:
         return argv_files
@@ -124,8 +168,7 @@ def collect_batch(argv_files):
     pending_path = os.path.join(BATCH_DIR, key + ".pending")
     lock_path = os.path.join(BATCH_DIR, key + ".lock")
 
-    with open(pending_path, "a", encoding="utf-8") as f:
-        f.write(argv_files[0] + "\n")
+    _append_with_retry(pending_path, argv_files[0])
 
     try:
         fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
@@ -133,26 +176,34 @@ def collect_batch(argv_files):
     except FileExistsError:
         return None  # ya hay un lider procesando este lote
 
+    start = time.time()
     last_size = -1
-    stable_since = time.time()
-    deadline = time.time() + BATCH_MAX_WAIT_SECONDS
+    stable_since = start
+    deadline = start + BATCH_MAX_WAIT_SECONDS
     while time.time() < deadline:
-        time.sleep(0.15)
+        time.sleep(0.2)
         try:
             size = os.path.getsize(pending_path)
         except OSError:
             size = last_size
+        now = time.time()
         if size != last_size:
             last_size = size
-            stable_since = time.time()
-        elif time.time() - stable_since >= BATCH_DEBOUNCE_SECONDS:
+            stable_since = now
+        elif now - start >= BATCH_MIN_WAIT_SECONDS and now - stable_since >= BATCH_DEBOUNCE_SECONDS:
             break
 
+    closed_path = pending_path + ".closed"
     try:
-        with open(pending_path, "r", encoding="utf-8") as f:
+        os.replace(pending_path, closed_path)
+    except OSError:
+        closed_path = pending_path
+
+    try:
+        with open(closed_path, "r", encoding="utf-8") as f:
             files = [ln.strip() for ln in f if ln.strip()]
     finally:
-        for p in (pending_path, lock_path):
+        for p in (closed_path, lock_path):
             try:
                 os.remove(p)
             except OSError:
@@ -175,6 +226,9 @@ def main():
     if not valid_files:
         log_error("No se recibieron archivos validos.")
         return
+
+    valid_files = sorted(valid_files, key=natural_sort_key)
+    log_error("Orden final: " + " | ".join(os.path.basename(p) for p in valid_files))
 
     first = valid_files[0]
     folder = os.path.dirname(first) or "."
