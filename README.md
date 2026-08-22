@@ -1,106 +1,35 @@
-# Crear PDF (menú contextual de Windows)
+# Combinar en PDF (menú contextual de Windows)
 
-Agrega la opción **"Crear PDF"** al menú contextual del Explorador de Windows.
-Selecciona varias imágenes, documentos de texto y/o PDFs, haz clic derecho →
-**Crear PDF**, y se genera un único PDF combinado en la misma carpeta, con el
-nombre del primer archivo seleccionado. Todo ocurre sin abrir ninguna ventana,
-similar a las Acciones Rápidas de macOS.
-
-## Formatos soportados
-
-- Imágenes: `.jpg`, `.jpeg`, `.png`, `.bmp`, `.gif`, `.tif`, `.tiff`, `.webp`
-- Documentos de texto: `.txt`, `.docx`
-- PDF: `.pdf` (se anexa tal cual)
-
-Los archivos de tipos no soportados dentro de una selección se omiten en
-silencio; el resto se combina igual.
-
-## Estructura del proyecto
-
-```
-Instalar.bat        <- doble clic para instalar
-Desinstalar.bat      <- doble clic para desinstalar
-README.md
-src/                 <- archivos internos, no hace falta tocarlos
-  Instalar-CrearPDF.ps1
-  Desinstalar-CrearPDF.ps1
-  crear_pdf.py
-  crear_pdf.ico
-```
-
-## Requisitos
-
-- Windows 10/11
-- [Python](https://www.python.org/) 3.9+ (el instalador lo instala automáticamente
-  con `winget` si no lo encuentra)
+Agrega un botón **"Combinar en un solo PDF"** al menú contextual del
+Explorador de Windows. Selecciona varios archivos (imágenes, PDF o TXT),
+clic derecho, y se genera un único PDF con todos ellos. El orden de las
+páginas se calcula siempre por nombre de archivo (orden alfanumérico
+natural), sin depender del orden en que Windows entrega la selección.
 
 ## Instalación
 
-No requiere permisos de administrador; se instala solo para el usuario actual.
+1. Descarga `CrearPDF.exe` e `Instalar.exe` y colócalos en la misma carpeta.
+2. Doble clic en **`Instalar.exe`**.
+3. Selecciona varios archivos compatibles → clic derecho → **"Combinar en un
+   solo PDF"**.
 
-### Doble clic (recomendado)
-
-1. Descarga este repositorio (botón **Code → Download ZIP**) y extrae la carpeta.
-2. Haz **doble clic en `Instalar.bat`**.
-
-Se abre una ventana de terminal que hace todo el trabajo automáticamente
-(instala Python si hace falta, sus dependencias, y registra el menú
-contextual). Solo tienes que esperar a que termine y presionar una tecla al
-final para cerrarla — no hace falta escribir ningún comando.
-
-> Windows puede mostrar una advertencia tipo **"Windows protegió su PC"**
-> por tratarse de un script sin firma digital de un editor reconocido. Es
-> normal en scripts personales — haz clic en **"Más información"** →
-> **"Ejecutar de todas formas"**.
-
-El instalador, por detrás:
-
-1. Busca Python en el equipo; si no lo encuentra, lo instala con `winget`.
-2. Instala las dependencias de Python necesarias (`img2pdf`, `pypdf`,
-   `reportlab`, `python-docx`).
-3. Copia el script y el ícono a `%LOCALAPPDATA%\CrearPDF`.
-4. Registra la entrada "Crear PDF" en el menú contextual (`HKEY_CURRENT_USER`).
-
-> **Nota (Windows 11):** el nuevo menú contextual oculta las entradas de
-> terceros bajo **"Mostrar más opciones"** (o `Shift` + clic derecho para
-> saltar directo ahí). Es una limitación del propio Windows 11, no de este
-> script.
-
-### Opción avanzada (PowerShell)
-
-Si prefieres ejecutarlo tú mismo desde la terminal: clic derecho dentro de la
-carpeta extraída en el Explorador de Archivos → **"Abrir en Terminal"**, y
-luego:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File ".\src\Instalar-CrearPDF.ps1"
-```
-
-Si descargaste el proyecto como `.zip`, desbloquea los archivos antes (quedan
-marcados como descargados de internet y PowerShell bloquea su ejecución por
-defecto; `Instalar.bat` ya hace esto automáticamente, pero al ejecutar el
-`.ps1` directo hay que hacerlo a mano):
-
-```powershell
-Get-ChildItem -Recurse | Unblock-File
-```
+Se instala solo para tu usuario (no requiere permisos de administrador) y no
+modifica nada fuera del registro de Windows (`HKCU`) y la carpeta
+`%LOCALAPPDATA%\CrearPDFMenu`.
 
 ## Desinstalación
 
-Doble clic en `Desinstalar.bat`, o manualmente:
+Doble clic en **`Desinstalar.exe`**. Quita el botón del menú contextual y
+borra los archivos instalados.
 
-```powershell
-powershell -ExecutionPolicy Bypass -File ".\src\Desinstalar-CrearPDF.ps1"
+## Compilar desde el código fuente
+
+Requiere Python 3.9+.
+
+```bash
+cd src
+build.bat
 ```
 
-Elimina la entrada del menú contextual y los archivos instalados en
-`%LOCALAPPDATA%\CrearPDF`.
-
-## Solución de problemas
-
-Los errores durante la fusión de archivos no se muestran en pantalla; quedan
-registrados en:
-
-```
-%TEMP%\CrearPDF\errores.log
-```
+Genera `CrearPDF.exe`, `Instalar.exe` y `Desinstalar.exe` en la raíz del
+proyecto.

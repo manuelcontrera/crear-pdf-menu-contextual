@@ -1,318 +1,251 @@
-r"""
-Combina imagenes, documentos de texto (.txt, .docx) y PDFs en un unico PDF.
-Pensado para ejecutarse sin ventanas (via pythonw.exe) desde el menu contextual
-del Explorador de archivos de Windows.
+# -*- coding: utf-8 -*-
+"""
+Combina archivos seleccionados (imagenes, PDF y TXT) en un solo PDF.
 
-Uso: pythonw.exe crear_pdf.py "archivo1" "archivo2" ...
-
-El PDF resultante se guarda en la misma carpeta que el primer archivo,
-con el nombre de ese primer archivo (extension .pdf).
-
-Los errores no se muestran en pantalla: quedan registrados en
-%TEMP%\CrearPDF\errores.log
+Se invoca desde el menu contextual de Windows con la lista de archivos
+seleccionados como argumentos. El orden de las paginas NO depende del
+orden en que Windows entrega los archivos: siempre se recalcula con un
+orden alfanumerico natural basado en el nombre de archivo.
 """
 
-import hashlib
+import ctypes
 import io
 import os
 import re
 import sys
 import textwrap
-import time
 import traceback
 from datetime import datetime
 
-import img2pdf
+from PIL import Image, ImageOps
 from pypdf import PdfReader, PdfWriter
 from reportlab.lib.pagesizes import A4
-from reportlab.lib.units import cm
+from reportlab.lib.units import mm
 from reportlab.pdfgen import canvas
 
-IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".gif", ".tif", ".tiff", ".webp"}
-TEXT_EXTS = {".txt"}
-DOCX_EXTS = {".docx"}
+IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".gif", ".tiff", ".tif", ".webp"}
 PDF_EXTS = {".pdf"}
+TEXT_EXTS = {".txt"}
+COMPATIBLE_EXTS = IMAGE_EXTS | PDF_EXTS | TEXT_EXTS
 
-LOG_DIR = os.path.join(os.environ.get("TEMP", "."), "CrearPDF")
-LOG_FILE = os.path.join(LOG_DIR, "errores.log")
+LOG_DIR = os.path.join(os.environ.get("LOCALAPPDATA", os.environ.get("TEMP", ".")), "CrearPDFMenu")
+LOG_PATH = os.path.join(LOG_DIR, "errores.log")
+
+MB_ICONINFORMATION = 0x40
+MB_ICONWARNING = 0x30
+MB_ICONERROR = 0x10
 
 
-def log_error(msg):
+def show_message(text, title="Combinar en PDF", icon=MB_ICONINFORMATION):
     try:
-        os.makedirs(LOG_DIR, exist_ok=True)
-        with open(LOG_FILE, "a", encoding="utf-8") as f:
-            f.write(f"[{datetime.now()}] {msg}\n")
+        ctypes.windll.user32.MessageBoxW(0, text, title, icon)
     except Exception:
         pass
 
 
-_NUM_RE = re.compile(r"(\d+)")
+def log_exception(context):
+    try:
+        os.makedirs(LOG_DIR, exist_ok=True)
+        with open(LOG_PATH, "a", encoding="utf-8") as f:
+            f.write("\n[{}] {}\n".format(datetime.now().isoformat(), context))
+            f.write(traceback.format_exc())
+    except Exception:
+        pass
 
 
 def natural_sort_key(path):
-    """Ordena por nombre de archivo de forma 'natural': 1, 2, 3, 10 en vez de
-    1, 10, 2, 3 (que es como quedaria con un orden alfabetico estricto)."""
-    name = os.path.basename(path).lower()
-    return [int(tok) if tok.isdigit() else tok for tok in _NUM_RE.split(name)]
+    """Orden alfanumerico natural por nombre de archivo (2 antes que 10)."""
+    stem = os.path.splitext(os.path.basename(path))[0]
+    parts = re.split(r"(\d+)", stem)
+    key = []
+    for part in parts:
+        if part.isdigit():
+            key.append((1, int(part)))
+        else:
+            key.append((0, part.lower()))
+    return key
 
 
-def render_lines_to_pdf_bytes(lines):
+def normalize_image(im):
+    im = ImageOps.exif_transpose(im)
+    has_alpha = im.mode in ("RGBA", "LA") or (im.mode == "P" and "transparency" in im.info)
+    if has_alpha:
+        im = im.convert("RGBA")
+        background = Image.new("RGB", im.size, (255, 255, 255))
+        background.paste(im, mask=im.split()[-1])
+        im = background
+    elif im.mode != "RGB":
+        im = im.convert("RGB")
+    return im
+
+
+def pages_from_pdf_bytes(writer, buf):
+    buf.seek(0)
+    reader = PdfReader(buf)
+    for page in reader.pages:
+        writer.add_page(page)
+
+
+def append_pdf(writer, path):
+    reader = PdfReader(path)
+    if reader.is_encrypted:
+        try:
+            reader.decrypt("")
+        except Exception:
+            pass
+    for page in reader.pages:
+        writer.add_page(page)
+
+
+def append_image(writer, path):
+    with Image.open(path) as im:
+        n_frames = getattr(im, "n_frames", 1)
+        frames = []
+        if im.format == "TIFF" and n_frames > 1:
+            for i in range(n_frames):
+                im.seek(i)
+                frames.append(normalize_image(im.copy()))
+        else:
+            frames.append(normalize_image(im))
+
+    for frame in frames:
+        buf = io.BytesIO()
+        frame.save(buf, format="PDF")
+        pages_from_pdf_bytes(writer, buf)
+
+
+def wrap_line(line, width):
+    if line == "":
+        return [""]
+    return textwrap.wrap(line, width=width, break_long_words=True, break_on_hyphens=False) or [""]
+
+
+def append_text(writer, path):
+    with open(path, "r", encoding="utf-8", errors="replace") as f:
+        content = f.read()
+
+    page_w, page_h = A4
+    margin = 20 * mm
+    font_size = 10
+    line_height = font_size * 1.2
+    max_width = page_w - 2 * margin
+    max_chars_per_line = max(10, int(max_width / (font_size * 0.6)))
+
     buf = io.BytesIO()
     c = canvas.Canvas(buf, pagesize=A4)
-    width, height = A4
-    margin = 2 * cm
-    line_height = 14
-    y = height - margin
-    c.setFont("Helvetica", 11)
+    c.setFont("Courier", font_size)
+    y = page_h - margin
 
-    def new_page():
-        nonlocal y
-        c.showPage()
-        c.setFont("Helvetica", 11)
-        y = height - margin
-
-    for raw_line in lines:
-        wrapped = textwrap.wrap(raw_line, 95) or [""]
-        for line in wrapped:
+    lines = content.splitlines() or [""]
+    for line in lines:
+        for wline in wrap_line(line, max_chars_per_line):
             if y < margin:
-                new_page()
-            c.drawString(margin, y, line)
+                c.showPage()
+                c.setFont("Courier", font_size)
+                y = page_h - margin
+            c.drawString(margin, y, wline)
             y -= line_height
-
     c.save()
-    return buf.getvalue()
+    pages_from_pdf_bytes(writer, buf)
 
 
-def text_to_pdf_bytes(path):
-    with open(path, "r", encoding="utf-8", errors="replace") as f:
-        lines = [ln.rstrip("\n") for ln in f]
-    return render_lines_to_pdf_bytes(lines)
-
-
-def docx_to_pdf_bytes(path):
-    from docx import Document
-
-    doc = Document(path)
-    lines = [p.text for p in doc.paragraphs]
-    return render_lines_to_pdf_bytes(lines)
-
-
-def image_to_pdf_bytes(path):
-    return img2pdf.convert(path)
-
-
-def unique_path(path):
-    if not os.path.exists(path):
-        return path
-    base, ext = os.path.splitext(path)
-    i = 1
-    while True:
-        candidate = f"{base} ({i}){ext}"
-        if not os.path.exists(candidate):
-            return candidate
-        i += 1
-
-
-BATCH_DIR = os.path.join(os.environ.get("TEMP", "."), "CrearPDF", "batches")
-# BATCH_MIN_WAIT_SECONDS: espera minima OBLIGATORIA antes de considerar
-# cerrar el lote, sin importar si todavia no ha llegado ningun rezagado. Es
-# necesaria porque, con cachés de disco frias, varios procesos de Python
-# lanzados casi a la vez pueden tardar mas de un segundo en terminar sus
-# imports antes de alcanzar a anotarse en la lista compartida; sin este piso,
-# el lider podria ver "silencio" desde el primer instante (porque nadie mas
-# se ha anotado *todavia*) y cerrar el lote de forma prematura, perdiendo
-# archivos.
-# BATCH_DEBOUNCE_SECONDS: tiempo de silencio (sin cambios) requerido, una vez
-# superado el piso anterior, para dar por terminada la seleccion.
-# BATCH_MAX_WAIT_SECONDS: tope absoluto de espera por si algo se traba.
-BATCH_MIN_WAIT_SECONDS = 4.0
-BATCH_DEBOUNCE_SECONDS = 1.5
-BATCH_MAX_WAIT_SECONDS = 25.0
-BATCH_APPEND_RETRY_SECONDS = 5.0
-
-
-def _append_with_retry(path, line, retry_seconds=BATCH_APPEND_RETRY_SECONDS):
-    deadline = time.time() + retry_seconds
-    while True:
-        try:
-            with open(path, "a", encoding="utf-8") as f:
-                f.write(line + "\n")
-            return
-        except OSError:
-            if time.time() >= deadline:
-                raise
-            time.sleep(0.1)
-
-
-def collect_batch(argv_files):
-    """Windows Explorer (y varios exploradores de terceros) a veces invocan
-    el comando una vez por cada archivo seleccionado en lugar de una sola vez
-    con todos. Aqui agrupamos esas invocaciones casi-simultaneas (misma
-    carpeta, a milisegundos/segundos de diferencia) en un unico lote.
-
-    Solo el primer proceso en tomar el "lock" (el lider) hace la fusion; el
-    resto solo deja su archivo anotado en la lista compartida y termina.
-
-    Para evitar perder archivos por una condicion de carrera entre "el lider
-    deja de esperar y lee la lista" y "un rezagado todavia esta anotandose",
-    el cierre del lote es atomico: se renombra el archivo de pendientes antes
-    de leerlo, asi cualquier invocacion que llegue despues simplemente
-    empieza un lote nuevo en vez de corromper el que ya se esta procesando.
-    """
-    if len(argv_files) != 1:
-        return argv_files
-
-    folder = os.path.dirname(argv_files[0]) or "."
-    key = hashlib.md5(os.path.abspath(folder).lower().encode("utf-8")).hexdigest()
-    os.makedirs(BATCH_DIR, exist_ok=True)
-    pending_path = os.path.join(BATCH_DIR, key + ".pending")
-    lock_path = os.path.join(BATCH_DIR, key + ".lock")
-
-    _append_with_retry(pending_path, argv_files[0])
-
-    try:
-        fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        os.close(fd)
-    except FileExistsError:
-        return None  # ya hay un lider procesando este lote
-
-    start = time.time()
-    last_size = -1
-    stable_since = start
-    deadline = start + BATCH_MAX_WAIT_SECONDS
-    while time.time() < deadline:
-        time.sleep(0.2)
-        try:
-            size = os.path.getsize(pending_path)
-        except OSError:
-            size = last_size
-        now = time.time()
-        if size != last_size:
-            last_size = size
-            stable_since = now
-        elif now - start >= BATCH_MIN_WAIT_SECONDS and now - stable_since >= BATCH_DEBOUNCE_SECONDS:
-            break
-
-    closed_path = pending_path + ".closed"
-    try:
-        os.replace(pending_path, closed_path)
-    except OSError:
-        closed_path = pending_path
-
-    try:
-        with open(closed_path, "r", encoding="utf-8") as f:
-            files = [ln.strip() for ln in f if ln.strip()]
-    finally:
-        for p in (closed_path, lock_path):
-            try:
-                os.remove(p)
-            except OSError:
-                pass
-
-    seen = set()
-    result = []
-    for f in files:
-        if f not in seen:
-            seen.add(f)
-            result.append(f)
-    return result
+def build_output_path(folder):
+    base = "PDF_Combinado"
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    candidate = os.path.join(folder, "{}_{}.pdf".format(base, timestamp))
+    counter = 1
+    while os.path.exists(candidate):
+        candidate = os.path.join(folder, "{}_{}_{}.pdf".format(base, timestamp, counter))
+        counter += 1
+    return candidate
 
 
 def main():
-    args = collect_batch(sys.argv[1:])
-    if not args:
-        return
-    valid_files = [a for a in args if os.path.isfile(a)]
-    if not valid_files:
-        log_error("No se recibieron archivos validos.")
+    args = sys.argv[1:]
+    selected = [a for a in args if os.path.isfile(a)]
+
+    if not selected:
+        show_message("No se selecciono ningun archivo valido.", icon=MB_ICONWARNING)
         return
 
-    valid_files = sorted(valid_files, key=natural_sort_key)
-    log_error("Orden final: " + " | ".join(os.path.basename(p) for p in valid_files))
+    compatible = []
+    skipped = []
+    for path in selected:
+        ext = os.path.splitext(path)[1].lower()
+        if ext in COMPATIBLE_EXTS:
+            compatible.append(path)
+        else:
+            skipped.append(path)
 
-    first = valid_files[0]
-    folder = os.path.dirname(first) or "."
-    base_name = os.path.splitext(os.path.basename(first))[0]
-    final_output = os.path.join(folder, base_name + ".pdf")
+    if not compatible:
+        show_message(
+            "Ninguno de los archivos seleccionados es compatible.\n\n"
+            "Formatos admitidos: imagenes (jpg, png, bmp, gif, tiff, webp), PDF y TXT.",
+            icon=MB_ICONWARNING,
+        )
+        return
+
+    compatible.sort(key=natural_sort_key)
 
     writer = PdfWriter()
-    open_streams = []
-    used_any = False
-
-    for path in valid_files:
+    errors = []
+    added = []
+    for path in compatible:
         ext = os.path.splitext(path)[1].lower()
         try:
             if ext in PDF_EXTS:
-                stream = open(path, "rb")
-                open_streams.append(stream)
-                reader = PdfReader(stream)
-                for page in reader.pages:
-                    writer.add_page(page)
-                used_any = True
+                append_pdf(writer, path)
             elif ext in IMAGE_EXTS:
-                pdf_bytes = image_to_pdf_bytes(path)
-                reader = PdfReader(io.BytesIO(pdf_bytes))
-                for page in reader.pages:
-                    writer.add_page(page)
-                used_any = True
+                append_image(writer, path)
             elif ext in TEXT_EXTS:
-                pdf_bytes = text_to_pdf_bytes(path)
-                reader = PdfReader(io.BytesIO(pdf_bytes))
-                for page in reader.pages:
-                    writer.add_page(page)
-                used_any = True
-            elif ext in DOCX_EXTS:
-                pdf_bytes = docx_to_pdf_bytes(path)
-                reader = PdfReader(io.BytesIO(pdf_bytes))
-                for page in reader.pages:
-                    writer.add_page(page)
-                used_any = True
-            else:
-                log_error(f"Tipo no soportado, se omite: {path}")
-        except Exception:
-            log_error(f"Error procesando {path}:\n{traceback.format_exc()}")
+                append_text(writer, path)
+            added.append(path)
+        except Exception as e:
+            errors.append("{}: {}".format(os.path.basename(path), e))
+            log_exception("Error procesando: {}".format(path))
 
-    if not used_any:
-        log_error("Ningun archivo valido para combinar (todos fallaron o no son soportados).")
-        for s in open_streams:
-            s.close()
+    if not added:
+        show_message(
+            "No se pudo procesar ningun archivo.\n\n" + "\n".join(errors[:10]),
+            icon=MB_ICONERROR,
+        )
         return
 
-    tmp_output = final_output + ".tmp"
+    out_dir = os.path.dirname(os.path.abspath(compatible[0]))
+    out_path = build_output_path(out_dir)
+
     try:
-        with open(tmp_output, "wb") as f:
+        with open(out_path, "wb") as f:
             writer.write(f)
-    except Exception:
-        log_error(f"Error al generar el PDF combinado:\n{traceback.format_exc()}")
-        for s in open_streams:
-            s.close()
-        if os.path.exists(tmp_output):
-            try:
-                os.remove(tmp_output)
-            except Exception:
-                pass
+    except Exception as e:
+        log_exception("Error guardando: {}".format(out_path))
+        show_message("No se pudo guardar el PDF:\n{}".format(e), icon=MB_ICONERROR)
         return
-    finally:
-        writer.close()
-        for s in open_streams:
-            try:
-                s.close()
-            except Exception:
-                pass
 
-    try:
-        input_abspaths = {os.path.abspath(p) for p in valid_files}
-        if os.path.exists(final_output) and os.path.abspath(final_output) not in input_abspaths:
-            final_output = unique_path(final_output)
-        os.replace(tmp_output, final_output)
-    except Exception:
-        log_error(f"Error al guardar el PDF final:\n{traceback.format_exc()}")
-        if os.path.exists(tmp_output):
-            try:
-                os.remove(tmp_output)
-            except Exception:
-                pass
+    msg_lines = [
+        "PDF creado correctamente:",
+        out_path,
+        "",
+        "Archivos incluidos: {}".format(len(added)),
+    ]
+    if skipped:
+        msg_lines.append("Archivos ignorados (formato no compatible): {}".format(len(skipped)))
+    if errors:
+        msg_lines.append("Archivos con error (no se pudieron incluir): {}".format(len(errors)))
+        msg_lines.append("Detalle en: {}".format(LOG_PATH))
+
+    show_message(
+        "\n".join(msg_lines),
+        icon=MB_ICONWARNING if (skipped or errors) else MB_ICONINFORMATION,
+    )
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        log_exception("Error no controlado en main()")
+        show_message(
+            "Ocurrio un error inesperado:\n{}\n\nDetalle en: {}".format(e, LOG_PATH),
+            icon=MB_ICONERROR,
+        )

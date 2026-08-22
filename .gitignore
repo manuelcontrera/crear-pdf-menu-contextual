@@ -1,2 +1,8 @@
+src/build/
+src/dist/
+src/*.spec
 __pycache__/
 *.pyc
+/CrearPDF.exe
+/Instalar.exe
+/Desinstalar.exe
