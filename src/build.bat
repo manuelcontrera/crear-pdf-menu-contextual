@@ -8,17 +8,17 @@ if errorlevel 1 goto :error
 
 echo.
 echo Compilando CrearPDF.exe...
-pyinstaller --onefile --noconsole --icon=crear_pdf.ico --name CrearPDF crear_pdf.py
+python -m PyInstaller --onefile --noconsole --icon=crear_pdf.ico --name CrearPDF crear_pdf.py
 if errorlevel 1 goto :error
 
 echo.
 echo Compilando Instalar.exe...
-pyinstaller --onefile --icon=crear_pdf.ico --name Instalar instalar.py
+python -m PyInstaller --onefile --icon=crear_pdf.ico --name Instalar instalar.py
 if errorlevel 1 goto :error
 
 echo.
 echo Compilando Desinstalar.exe...
-pyinstaller --onefile --icon=crear_pdf.ico --name Desinstalar desinstalar.py
+python -m PyInstaller --onefile --icon=crear_pdf.ico --name Desinstalar desinstalar.py
 if errorlevel 1 goto :error
 
 echo.
