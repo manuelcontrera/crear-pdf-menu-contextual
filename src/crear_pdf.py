@@ -23,6 +23,7 @@ import traceback
 from datetime import datetime
 
 import img2pdf
+from PIL import Image, ImageOps
 from pypdf import PdfReader, PdfWriter
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import cm
@@ -32,6 +33,11 @@ IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".gif", ".tif", ".tiff", ".webp"}
 TEXT_EXTS = {".txt"}
 DOCX_EXTS = {".docx"}
 PDF_EXTS = {".pdf"}
+
+# Limite del lado mas corto de la imagen (en px) antes de incluirla en el PDF.
+# Si el lado mas corto ya es menor o igual, la imagen se deja tal cual.
+IMAGE_MAX_SHORT_SIDE = 2000
+IMAGE_JPEG_QUALITY = 88
 
 LOG_DIR = os.path.join(os.environ.get("TEMP", "."), "CrearPDF")
 LOG_FILE = os.path.join(LOG_DIR, "errores.log")
@@ -98,7 +104,26 @@ def docx_to_pdf_bytes(path):
 
 
 def image_to_pdf_bytes(path):
-    return img2pdf.convert(path)
+    with Image.open(path) as img:
+        img = ImageOps.exif_transpose(img)
+
+        if img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info):
+            background = Image.new("RGB", img.size, (255, 255, 255))
+            rgba = img.convert("RGBA")
+            background.paste(rgba, mask=rgba.split()[3])
+            img = background
+        elif img.mode != "RGB":
+            img = img.convert("RGB")
+
+        short_side = min(img.size)
+        if short_side > IMAGE_MAX_SHORT_SIDE:
+            scale = IMAGE_MAX_SHORT_SIDE / short_side
+            new_size = (round(img.width * scale), round(img.height * scale))
+            img = img.resize(new_size, Image.LANCZOS)
+
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=IMAGE_JPEG_QUALITY, optimize=True)
+        return img2pdf.convert(buf.getvalue())
 
 
 def unique_path(path):
